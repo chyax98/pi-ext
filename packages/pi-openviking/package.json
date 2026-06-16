@@ -1,0 +1,26 @@
+{
+  "name": "pi-openviking",
+  "version": "0.1.0",
+  "description": "OpenViking memory search, read, write, and session sync for Pi",
+  "private": true,
+  "type": "module",
+  "keywords": ["pi-package", "pi-extension", "openviking", "memory"],
+  "files": [
+    "*.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  }
+}

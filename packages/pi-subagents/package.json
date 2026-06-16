@@ -1,0 +1,79 @@
+{
+  "name": "pi-subagents",
+  "version": "0.26.0",
+  "description": "Pi extension for managed child-agent runs and workflow SOPs",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chyax98/pi-ext.git",
+    "directory": "packages/pi-subagents"
+  },
+  "homepage": "https://github.com/chyax98/pi-ext/tree/master/packages/pi-subagents",
+  "bugs": {
+    "url": "https://github.com/chyax98/pi-ext/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "managed-agents",
+    "ai",
+    "agents",
+    "cli"
+  ],
+  "files": [
+    "src/**/*.ts",
+    "agents/",
+    "prompts/**/*",
+    "workflows/**/*",
+    "docs/current-implementation-map.md",
+    "docs/final-tool-surface.md",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --experimental-strip-types --test test/unit/*.test.ts",
+    "test:integration": "node --experimental-transform-types --import ./test/support/register-loader.mjs --test test/integration/*.test.ts",
+    "test:all": "npm run test:unit && npm run test:integration"
+  },
+  "pi": {
+    "extensions": [
+      "./src/extension/index.ts"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-agent-core": {
+      "optional": true
+    },
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.74.0",
+    "jiti": "^2.7.0",
+    "typebox": "^1.1.24"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-agent-core": "^0.74.0",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0"
+  },
+  "exports": {
+    ".": "./src/extension/index.ts",
+    "./package.json": "./package.json"
+  }
+}

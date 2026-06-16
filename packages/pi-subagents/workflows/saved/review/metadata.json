@@ -1,0 +1,6 @@
+{
+  "name": "review",
+  "description": "Scout and review a target without editing.",
+  "inputs": ["target", "task"],
+  "bundled": true
+}

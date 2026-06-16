@@ -1,0 +1,6 @@
+{
+  "name": "implementation",
+  "description": "Plan, implement, and review a bounded implementation task with bundled roles.",
+  "inputs": ["task", "issue", "request"],
+  "bundled": true
+}

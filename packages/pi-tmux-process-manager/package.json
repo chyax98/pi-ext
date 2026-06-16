@@ -1,0 +1,35 @@
+{
+  "name": "pi-tmux-process-manager",
+  "version": "0.2.0",
+  "description": "tmux-based background process manager for Pi",
+  "type": "module",
+  "main": "src/index.ts",
+  "keywords": ["pi-package", "pi-extension", "tmux", "process"],
+  "files": [
+    "src/**/*",
+    "README.md",
+    "docs/**/*"
+  ],
+  "scripts": {
+    "lint": "eslint src/ test/",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck",
+    "test": "npm run test:unit",
+    "test:unit": "node --experimental-transform-types --import ./test/support/register-loader.mjs --test 'test/unit/*.test.ts'"
+  },
+  "pi": {
+    "extensions": ["./src/index.ts"],
+    "skills": ["./src/skills"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "eslint": "^9.39.4",
+    "eslint-plugin-import": "^2.32.0",
+    "typebox": "^1.1.38",
+    "typescript": "^5.0.0"
+  }
+}
