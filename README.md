@@ -14,6 +14,7 @@
 | `packages/pi-subagents` | 托管子 agent、`agent_*` / `workflow_*` 工具 |
 | `packages/pi-openviking` | OpenViking 记忆检索/写入、`mem*` 工具 |
 | `packages/pi-tmux-process-manager` | tmux 长驻进程、`tmux_process` 工具 |
+| `packages/pi-codex-goal` | Codex-style `/goal` 目标追踪、续跑、完成审计 |
 
 ## Local Pi wiring
 
@@ -23,6 +24,7 @@ For local development, add each package directory to Pi's local extension settin
 <repo>/packages/pi-subagents
 <repo>/packages/pi-openviking
 <repo>/packages/pi-tmux-process-manager
+<repo>/packages/pi-codex-goal
 ```
 
 After changing code, restart Pi or use `/reload` when supported.
@@ -57,4 +59,5 @@ pi install npm:<scope>/<name>
       pi-subagents/
       pi-openviking/
       pi-tmux-process-manager/
+      pi-codex-goal/
 ```

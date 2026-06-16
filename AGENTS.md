@@ -17,6 +17,7 @@ piext/
     pi-subagents/       # managed child agents, workflows (has unit + integration tests)
     pi-openviking/      # OpenViking mem* tools, recall, session sync
     pi-tmux-process-manager/  # tmux_process tool, skill under src/skills/
+    pi-codex-goal/      # Codex-style /goal tracking, continuation, completion audit
 ```
 
 Do not treat `~/.pi/agent/extensions/` as the source of truth; canonical code lives here.
@@ -37,6 +38,7 @@ Per package (example):
 ```bash
 cd packages/pi-subagents && npm run test:unit
 cd packages/pi-tmux-process-manager && npm run test:unit
+cd packages/pi-codex-goal && npm run verify
 ```
 
 After changing extension entrypoints or `package.json` `pi` manifest: **restart Pi** or use `/reload` when supported.
@@ -64,7 +66,7 @@ Switch dev → npm: `pi remove <absolute-path>` then `pi install npm:...`.
 ## Agent workflow expectations
 
 1. **Scope:** Change only the package(s) relevant to the task; avoid drive-by refactors across workspaces.
-2. **Verify:** Run tests in the touched package before claiming done (`pi-subagents` and `pi-tmux-process-manager` have automated tests).
+2. **Verify:** Run tests in the touched package before claiming done (`pi-subagents`, `pi-tmux-process-manager`, and `pi-codex-goal` have automated tests).
 3. **Settings:** Do not commit secrets; `~/.pi/agent/settings.json` is user-local — document path changes in README/AGENTS, do not copy full settings into the repo.
 4. **New package:** Add under `packages/`, wire `pi` manifest, add to local Pi settings with the package directory path.
 5. **Docs:** User-facing Pi behavior notes for extensions stay in each package `README.md`; repo-wide conventions stay here and in root `README.md`.
