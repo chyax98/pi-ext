@@ -16,6 +16,7 @@
 | `packages/pi-tmux-process-manager` | tmux 长驻进程、`tmux_process` 工具 |
 | `packages/pi-codex-goal` | Codex-style `/goal` 目标追踪、续跑、完成审计 |
 | `packages/pi-mcp-adapter` | MCP gateway / direct tools / OAuth adapter，本地维护版 |
+| `packages/pi-hashline-tools` | XD-maintained hashline read/edit/grep/write/ls/find/ast_search/bash package；先维护验证，暂不配置到本机 Pi |
 
 ## Local Pi wiring
 
@@ -27,6 +28,8 @@ For local development, add each package directory to Pi's local extension settin
 <repo>/packages/pi-tmux-process-manager
 <repo>/packages/pi-codex-goal
 <repo>/packages/pi-mcp-adapter
+# pending stabilization; do not wire by default yet:
+# <repo>/packages/pi-hashline-tools
 ```
 
 After changing code, restart Pi or use `/reload` when supported.
@@ -63,4 +66,5 @@ pi install npm:<scope>/<name>
       pi-tmux-process-manager/
       pi-codex-goal/
       pi-mcp-adapter/
+      pi-hashline-tools/
 ```

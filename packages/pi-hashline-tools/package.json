@@ -1,0 +1,79 @@
+{
+  "name": "pi-hashline-tools",
+  "version": "0.1.0",
+  "description": "XD-maintained Pi hashline tools: anchored read/edit/grep, structural maps, AST search, file exploration, and bash output compression",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "hashline",
+    "code-map",
+    "ast-grep"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chyax98/pi-ext.git",
+    "directory": "packages/pi-hashline-tools"
+  },
+  "author": "XD Inc.",
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "src/",
+    "prompts/",
+    "scripts/gdscript_outline.py",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "diff": "^8.0.3",
+    "ignore": "^7.0.5",
+    "picomatch": "^4.0.4",
+    "tree-sitter-wasms": "0.1.13",
+    "ts-morph": "^27.0.2",
+    "web-tree-sitter": "0.25.10",
+    "xxhash-wasm": "^1.1.0"
+  },
+  "optionalDependencies": {
+    "@ast-grep/cli": "0.42.2",
+    "nushell": "0.108.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.78.0",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@earendil-works/pi-tui": "^0.78.0",
+    "@sinclair/typebox": "^0.34.48",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "bugs": {
+    "url": "https://github.com/chyax98/pi-ext/issues"
+  },
+  "homepage": "https://github.com/chyax98/pi-ext/tree/master/packages/pi-hashline-tools#readme"
+}

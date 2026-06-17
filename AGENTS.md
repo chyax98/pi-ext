@@ -19,6 +19,7 @@ piext/
     pi-tmux-process-manager/  # tmux_process tool, skill under src/skills/
     pi-codex-goal/      # Codex-style /goal tracking, continuation, completion audit
     pi-mcp-adapter/    # MCP gateway / direct tools / OAuth adapter, local maintained version
+    pi-hashline-tools/ # XD-maintained merged hashline read/edit/grep/write/ls/find/ast_search/bash package
 ```
 
 Do not treat `~/.pi/agent/extensions/` as the source of truth; canonical code lives here.
@@ -40,9 +41,10 @@ Per package (example):
 cd packages/pi-subagents && npm run test:unit
 cd packages/pi-tmux-process-manager && npm run test:unit
 cd packages/pi-codex-goal && npm run verify
+cd packages/pi-hashline-tools && npm test
 ```
 
-After changing extension entrypoints or `package.json` `pi` manifest: **restart Pi** or use `/reload` when supported.
+After changing extension entrypoints or `package.json` `pi` manifest: **restart Pi** or use `/reload` when supported. `pi-hashline-tools` is currently maintained in-repo but should not be added to user-local Pi settings until it is explicitly stabilized.
 
 ## Pi package rules
 
