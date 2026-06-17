@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type AgentConfig, type AgentScope } from "../../agents/agents.ts";
 import { getArtifactsDir } from "../../shared/artifacts.ts";
+import { registerForegroundDetachRunHandle } from "./foreground-detach.ts";
 import { ChainClarifyComponent, type ChainClarifyResult } from "./chain-clarify.ts";
 import { toModelInfo, type ModelInfo } from "../../shared/model-info.ts";
 import { executeChain } from "./chain-execution.ts";
@@ -1390,6 +1391,7 @@ interface ForegroundParallelRunInput {
 	onUpdate?: (r: AgentToolResult<Details>) => void;
 	worktreeSetup?: WorktreeSetup;
 	timeoutMs?: number;
+	detachSignal?: AbortSignal;
 	timeoutMinutes?: number;
 	extensionPolicy?: ChildExtensionPolicy;
 }
@@ -1469,6 +1471,108 @@ function buildParallelWorktreeSuffix(
 	return formatWorktreeDiffSummary(diffs);
 }
 
+function createForegroundRunDetachHandle(input: {
+	runId: string;
+	mode: "parallel" | "chain";
+	startedAt: number;
+	params: SubagentParamsLike;
+	abortForeground?: () => void;
+	execute: (id: string, params: SubagentParamsLike) => AgentToolResult<Details> | Promise<AgentToolResult<Details>>;
+	onUpdate?: (r: AgentToolResult<Details>) => void;
+}): () => void {
+	let detached = false;
+	return registerForegroundDetachRunHandle({
+		runId: input.runId,
+		mode: input.mode,
+		startedAt: input.startedAt,
+		requestDetach: (reason: string) => {
+			if (detached) return { accepted: false, message: `Foreground run already detached: ${input.runId}`, asyncId: input.runId };
+			detached = true;
+			let asyncId = input.runId;
+			try {
+				const started = input.execute(input.runId, { ...input.params, async: true, clarify: false });
+				if (started && typeof (started as Promise<AgentToolResult<Details>>).then === "function") {
+					void Promise.resolve(started)
+						.then((result) => input.onUpdate?.(result))
+						.catch((error) => {
+							input.onUpdate?.({
+								content: [{ type: "text", text: `Failed to detach foreground ${input.mode} run ${input.runId}: ${error instanceof Error ? error.message : String(error)}` }],
+								isError: true,
+								details: { mode: input.mode, runId: input.runId, results: [] },
+							});
+						});
+				} else {
+					asyncId = (started as AgentToolResult<Details>).details?.asyncId ?? input.runId;
+					input.onUpdate?.(started as AgentToolResult<Details>);
+				}
+			} catch (error) {
+				input.onUpdate?.({
+					content: [{ type: "text", text: `Failed to detach foreground ${input.mode} run ${input.runId}: ${error instanceof Error ? error.message : String(error)}` }],
+					isError: true,
+					details: { mode: input.mode, runId: input.runId, results: [] },
+				});
+			}
+			input.abortForeground?.();
+			return {
+				accepted: true,
+				message: `Detaching foreground ${input.mode} run ${input.runId} to a root background run. Current foreground children will be interrupted; use agent_status({ id: "${asyncId}" }) for the preserved root run. Reason: ${reason}`,
+				asyncId,
+			};
+		}
+	});
+}
+
+function buildParallelOutputCollisionSuffix(task: TaskParam, index: number): string {
+	const key = [index, task.agent, task.task, task.cwd ?? ""].join("\0");
+	const hash = createHash("sha1").update(key).digest("hex").slice(0, 8);
+	return `${index + 1}-${task.agent.replace(/[^\w.-]/g, "_")}-${hash}`;
+}
+
+function namespaceParallelOutputPath(output: string, task: TaskParam, index: number): string {
+	if (path.isAbsolute(output)) return output;
+	const parsed = path.parse(output);
+	return path.join(parsed.dir, `${parsed.name}.${buildParallelOutputCollisionSuffix(task, index)}${parsed.ext}`);
+}
+
+function disambiguateDuplicateParallelOutputPaths(input: {
+	tasks: TaskParam[];
+	behaviors: ResolvedStepBehavior[];
+	paramsCwd: string;
+	ctxCwd: string;
+	worktreeSetup?: WorktreeSetup;
+}): string | undefined {
+	const byPath = new Map<string, number[]>();
+	for (let index = 0; index < input.tasks.length; index++) {
+		const behavior = input.behaviors[index];
+		if (!behavior?.output) continue;
+		const task = input.tasks[index]!;
+		const taskCwd = resolveParallelTaskCwd(task, input.paramsCwd, input.worktreeSetup, index);
+		const outputPath = resolveSingleOutputPath(behavior.output, input.ctxCwd, taskCwd);
+		if (!outputPath) continue;
+		const indices = byPath.get(outputPath) ?? [];
+		indices.push(index);
+		byPath.set(outputPath, indices);
+	}
+
+	const renamed: string[] = [];
+	for (const [outputPath, indices] of byPath) {
+		if (indices.length < 2) continue;
+		for (const index of indices) {
+			const behavior = input.behaviors[index]!;
+			const task = input.tasks[index]!;
+			if (typeof behavior.output !== "string") continue;
+			if (path.isAbsolute(behavior.output)) {
+				const first = indices[0]!;
+				return `Parallel tasks ${first + 1} (${input.tasks[first]!.agent}) and ${index + 1} (${task.agent}) resolve absolute output to the same path: ${outputPath}. Use distinct absolute output paths or a relative output path so it can be auto-disambiguated.`;
+			}
+			const nextOutput = namespaceParallelOutputPath(behavior.output, task, index);
+			behavior.output = nextOutput;
+			renamed.push(`task ${index + 1} (${task.agent}) -> ${resolveSingleOutputPath(nextOutput, input.ctxCwd, resolveParallelTaskCwd(task, input.paramsCwd, input.worktreeSetup, index))}`);
+		}
+	}
+	return renamed.length ? `Auto-disambiguated duplicate parallel output paths:\n${renamed.join("\n")}` : undefined;
+}
+
 function findDuplicateParallelOutputPath(input: {
 	tasks: TaskParam[];
 	behaviors: ResolvedStepBehavior[];
@@ -1510,7 +1614,11 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
 			outputPath,
 		);
 		const interruptController = new AbortController();
-		if (input.foregroundControl) {
+		const detachAbortHandler = () => interruptController.abort();
+		input.detachSignal?.addEventListener("abort", detachAbortHandler, { once: true });
+		try {
+			if (input.detachSignal?.aborted) interruptController.abort();
+			if (input.foregroundControl) {
 			input.foregroundControl.currentAgent = task.agent;
 			input.foregroundControl.currentIndex = index;
 			input.foregroundControl.currentActivityState = undefined;
@@ -1524,7 +1632,7 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
 			};
 		}
 		const agentConfig = input.agents.find((agent) => agent.name === task.agent);
-		return runSync(input.ctx.cwd, input.agents, task.agent, taskText, {
+		return await runSync(input.ctx.cwd, input.agents, task.agent, taskText, {
 			cwd: taskCwd,
 			signal: input.signal,
 			interruptSignal: interruptController.signal,
@@ -1553,6 +1661,7 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
 			acceptance: task.acceptance,
 			timeoutMs: requestedSubagentTimeoutMs(task) ?? input.timeoutMs,
 			extensionPolicy: input.extensionPolicy,
+			detachToBackground: false,
 			acceptanceContext: { mode: "parallel" },
 				onUpdate: input.onUpdate
 					? (progressUpdate) => {
@@ -1594,6 +1703,9 @@ async function runForegroundParallelTasks(input: ForegroundParallelRunInput): Pr
 				input.foregroundControl.updatedAt = Date.now();
 			}
 		});
+		} finally {
+			input.detachSignal?.removeEventListener("abort", detachAbortHandler);
+		}
 	});
 }
 
@@ -1788,7 +1900,30 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 	);
 	if (errorResult) return errorResult;
 
+	const detachController = new AbortController();
+	const unregisterRunDetach = createForegroundRunDetachHandle({
+		runId,
+		mode: "parallel",
+		startedAt: Date.now(),
+		params,
+		abortForeground: () => detachController.abort(),
+		execute: () => {
+			const result = runAsyncPath({ ...data, params: { ...params, async: true, clarify: false }, effectiveAsync: true }, deps);
+			if (!result) throw new Error("Failed to start root async parallel detach run.");
+			return result;
+		},
+		onUpdate,
+	});
+
 	try {
+		const outputDisambiguation = disambiguateDuplicateParallelOutputPaths({
+			tasks,
+			behaviors,
+			paramsCwd: effectiveCwd,
+			ctxCwd: ctx.cwd,
+			worktreeSetup,
+		});
+		if (outputDisambiguation?.includes("resolve absolute output")) return buildParallelModeError(outputDisambiguation);
 		const duplicateOutputError = findDuplicateParallelOutputPath({
 			tasks,
 			behaviors,
@@ -1844,6 +1979,7 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 			onUpdate,
 			timeoutMs: requestedSubagentTimeoutMs(params),
 			extensionPolicy: params.extensionPolicy,
+			detachSignal: detachController.signal,
 			worktreeSetup,
 		});
 		for (let i = 0; i < results.length; i++) {
@@ -1924,6 +2060,7 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 			details,
 		};
 	} finally {
+		unregisterRunDetach();
 		if (worktreeSetup) cleanupWorktrees(worktreeSetup);
 	}
 }

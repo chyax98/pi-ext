@@ -858,6 +858,8 @@ export interface RunSyncOptions {
 		dynamic?: boolean;
 		dynamicGroup?: boolean;
 	};
+	/** Set false when a parent foreground orchestrator owns detach-to-background for the whole run. */
+	detachToBackground?: false;
 }
 
 export type IntercomBridgeMode = "off" | "fork-only" | "always";
