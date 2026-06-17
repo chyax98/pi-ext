@@ -12,11 +12,16 @@ import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+	activeForegroundDetachCount,
+	requestLatestForegroundDetach,
+} from "../../src/runs/foreground/foreground-detach.ts";
 import type { MockPi } from "../support/helpers.ts";
 import {
 	createEventBus,
 	createMockPi,
 	createTempDir,
+	events,
 	makeAgent,
 	makeAgentConfigs,
 	makeMinimalCtx,
@@ -112,9 +117,9 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 		removeTempDir(tempDir);
 	});
 
-	function makeExecutor(agents = [makeAgent("echo")]) {
+	function makeExecutor(agents = [makeAgent("echo")], eventBus = createEventBus()) {
 		return createSubagentExecutor({
-			pi: { events: createEventBus(), getSessionName: () => undefined },
+			pi: { events: eventBus, getSessionName: () => undefined },
 			state: { baseCwd: tempDir, currentSessionId: null, asyncJobs: new Map(), foregroundControls: new Map(), lastForegroundControlId: null },
 			config: {},
 			asyncByDefault: false,
@@ -257,11 +262,12 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 		assert.equal(mockPi.callCount(), 0);
 	});
 
-	it("rejects duplicate top-level parallel output paths", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+	it("auto-disambiguates duplicate relative top-level parallel output paths", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		mockPi.onCall({ output: "Review done" });
 		const executor = makeExecutor();
 
 		const result = await executor.execute(
-			"parallel-duplicate-output",
+			"parallel-duplicate-relative-output",
 			{
 				tasks: [
 					{ agent: "echo", task: "Write A", output: "same.md" },
@@ -273,10 +279,37 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 			makeMinimalCtx(tempDir),
 		);
 
+		assert.equal(result.isError, undefined);
+		assert.equal(mockPi.callCount(), 2);
+		const savedPaths = result.details?.results?.map((entry: any) => entry.savedOutputPath).filter(Boolean) ?? [];
+		assert.equal(savedPaths.length, 2);
+		assert.notEqual(savedPaths[0], savedPaths[1]);
+		assert.match(savedPaths[0], /same\.1-echo-[0-9a-f]{8}\.md$/);
+		assert.match(savedPaths[1], /same\.2-echo-[0-9a-f]{8}\.md$/);
+	});
+
+	it("rejects duplicate absolute top-level parallel output paths", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		const executor = makeExecutor();
+
+		const absoluteOutput = path.join(tempDir, "same-absolute.md");
+		const result = await executor.execute(
+			"parallel-duplicate-absolute-output",
+			{
+				tasks: [
+					{ agent: "echo", task: "Write A", output: absoluteOutput },
+					{ agent: "echo", task: "Write B", output: absoluteOutput },
+				],
+			},
+			new AbortController().signal,
+			undefined,
+			makeMinimalCtx(tempDir),
+		);
+
 		assert.equal(result.isError, true);
-		assert.match(result.content[0]?.text ?? "", /same path/);
+		assert.match(result.content[0]?.text ?? "", /resolve absolute output to the same path/);
 		assert.equal(mockPi.callCount(), 0);
 	});
+
 
 	it("treats string false as disabled output in top-level parallel runs", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
 		mockPi.onCall({ output: "Review done" });
@@ -298,6 +331,50 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 		assert.equal(result.isError, undefined);
 		assert.equal(mockPi.callCount(), 2);
 		assert.equal(fs.existsSync(path.join(tempDir, "false")), false);
+	});
+
+	it("top-level parallel keyboard detach targets the root run instead of a child", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {
+		mockPi.onCall({ steps: [{ delay: 200, jsonl: [events.assistantMessage("still running A")] }] });
+		mockPi.onCall({ steps: [{ delay: 200, jsonl: [events.assistantMessage("still running B")] }] });
+		const eventBus = createEventBus();
+		const executor = makeExecutor(makeAgentConfigs(["agent-a", "agent-b"]), eventBus);
+		let detachResult: ReturnType<typeof requestLatestForegroundDetach> | undefined;
+		let asyncStart: any;
+		eventBus.on("subagent:async-started", (payload) => {
+			asyncStart = payload;
+		});
+		const ctx = makeMinimalCtx(tempDir);
+
+		const runPromise = executor.execute(
+			"parallel-hotkey-root-detach",
+			{
+				tasks: [
+					{ agent: "agent-a", task: "Task A" },
+					{ agent: "agent-b", task: "Task B" },
+				],
+				concurrency: 2,
+			},
+			new AbortController().signal,
+			undefined,
+			ctx,
+		);
+
+		for (let attempt = 0; attempt < 50; attempt++) {
+			detachResult = requestLatestForegroundDetach("test hotkey");
+			if (detachResult.accepted) break;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+
+		assert.equal(detachResult?.accepted, true);
+		assert.ok(detachResult?.asyncId);
+		assert.doesNotMatch(detachResult?.asyncId ?? "", /-1$/);
+		assert.equal(activeForegroundDetachCount() > 0, true);
+
+		const result = await runPromise;
+		assert.equal(result.details?.mode, "parallel");
+		assert.equal(result.details?.results?.some((entry: any) => entry.interrupted), true);
+		assert.equal(asyncStart?.id, detachResult?.asyncId);
+		assert.equal(asyncStart?.mode, "parallel");
 	});
 
 	it("top-level parallel reads are injected once with chain-style prefix", { skip: !createSubagentExecutor ? "executor not importable" : undefined }, async () => {

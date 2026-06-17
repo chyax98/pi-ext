@@ -387,6 +387,7 @@ async function runSingleAttempt(
 		let timeoutKillTimer: NodeJS.Timeout | undefined;
 		let timedOut = false;
 
+		const detachToBackgroundEnabled = options.detachToBackground !== false;
 		const detachRunId = options.runId ?? `foreground-${process.pid}-${startTime}-${options.index ?? 0}`;
 		const asyncId = foregroundAsyncId(detachRunId, options.index);
 		const asyncDir = path.join(ASYNC_DIR, asyncId);
@@ -769,13 +770,13 @@ async function runSingleAttempt(
 		let stderrBuf = "";
 
 		const clearStdioGuard = attachPostExitStdioGuard(proc, { idleMs: 2000, hardMs: 8000 });
-		unregisterDetachHandle = registerForegroundDetachHandle({
+		unregisterDetachHandle = detachToBackgroundEnabled ? registerForegroundDetachHandle({
 			runId: detachRunId,
 			agent: agent.name,
 			index: options.index,
 			startedAt: startTime,
 			requestDetach: detachToBackground,
-		});
+		}) : undefined;
 		proc.stdout.on("data", (d) => {
 			buf += d.toString();
 			const lines = buf.split("\n");

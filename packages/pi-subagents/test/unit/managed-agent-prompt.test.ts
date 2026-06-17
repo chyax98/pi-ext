@@ -12,6 +12,9 @@ describe("managed-agent native prompt support", () => {
 		assert.match(once, /agent_start/);
 		assert.match(once, /workflow_send/);
 		assert.match(once, /Default\/omitted placement is foreground blocking wait/);
+		assert.match(once, /put timeout\/model overrides inside each `agents\[\]\.runtime`/);
+		assert.match(once, /Do not mix `context: "fresh"` and `context: "fork"` in one call/);
+		assert.match(once, /multiple `scout` agents in the same `cwd`/);
 		assert.match(once, /do not loop, sleep, or repeatedly call `agent_status` just to wait/);
 		assert.equal(twice, once);
 	});
