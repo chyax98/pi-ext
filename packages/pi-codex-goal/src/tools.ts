@@ -9,16 +9,20 @@ import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.js";
 
 const EmptyParams = Type.Object({});
 
+const TokenBudgetParam = Type.Unsafe({
+  anyOf: [
+    { type: "number", exclusiveMinimum: 0 },
+    { type: "string", minLength: 1 },
+  ],
+  description:
+    "Optional token budget in millions of tokens. Only set this when the user explicitly provides a budget/limit. Values like 2 or '2m' mean 2,000,000 tokens.",
+});
+
 const CreateGoalParams = Type.Object({
   objective: Type.String({
     description: "Concrete objective to pursue until completion.",
   }),
-  token_budget: Type.Optional(
-    Type.Integer({
-      description: "Optional positive integer token budget.",
-      minimum: 1,
-    }),
-  ),
+  token_budget: Type.Optional(TokenBudgetParam),
   replace_existing: Type.Optional(
     Type.Boolean({
       description:
@@ -54,6 +58,26 @@ function throwToolError(message: string): never {
   throw new Error(message);
 }
 
+function parseTokenBudget(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) {
+    return value as null | undefined;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? Math.floor(value * 1_000_000) : Number.NaN;
+  }
+  if (typeof value !== "string") {
+    return Number.NaN;
+  }
+  const normalized = value.trim().toLowerCase().replaceAll("_", "").replace(/\s+/g, "");
+  const match = normalized.match(/^(\d+(?:\.\d+)?)m?$/);
+  if (!match) {
+    return Number.NaN;
+  }
+  const numeric = Number(match[1]);
+  const budget = numeric * 1_000_000;
+  return Number.isFinite(budget) && budget > 0 ? Math.floor(budget) : Number.NaN;
+}
+
 export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
   pi.registerTool({
     name: "get_goal",
@@ -77,11 +101,15 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: CreateGoalParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const parsedTokenBudget = parseTokenBudget(params.token_budget);
+      if (Number.isNaN(parsedTokenBudget)) {
+        throwToolError("Token budget must be a positive number of millions, such as 2 or 2m. Only set token_budget when the user explicitly provides a budget/limit.");
+      }
       const current = host.getGoal();
       const shouldReplaceExisting = params.replace_existing === true && current !== null && current.status !== "complete";
       const result = shouldReplaceExisting
-        ? replaceGoal(params.objective, params.token_budget ?? null)
-        : createGoal(current, params.objective, params.token_budget ?? null);
+        ? replaceGoal(params.objective, parsedTokenBudget ?? null)
+        : createGoal(current, params.objective, parsedTokenBudget ?? null);
       if (!result.ok || !result.goal) {
         throwToolError(result.message);
       }
