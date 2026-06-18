@@ -105,6 +105,46 @@ describe("agent run action tools", () => {
 		assert.match(h.calls[0].task, /- src\/auth\.ts/);
 	});
 
+	it("agent_start promotes identical agents output to the top-level output policy", async () => {
+		const h = makeHarness();
+		await h.tools.get("agent_start").execute("run-output-shim", {
+			agents: [
+				{ role: "scout", task: "Inspect auth flow.", output: { disable: true } },
+				{ role: "scout", task: "Inspect persistence layer.", output: { disable: true } },
+			],
+			concurrency: 2,
+		}, h.signal, undefined, h.ctx);
+
+		assert.equal(h.calls.length, 1);
+		assert.equal(h.calls[0].tasks.length, 2);
+		assert.equal(h.calls[0].tasks[0].output, false);
+		assert.equal(h.calls[0].tasks[1].output, false);
+	});
+
+	it("agent_start rejects mixed per-agent output policies with migration guidance", async () => {
+		const h = makeHarness();
+		const mixed = await h.tools.get("agent_start").execute("run-output-mixed", {
+			agents: [
+				{ role: "scout", task: "Inspect auth flow.", output: { path: "auth.md" } },
+				{ role: "scout", task: "Inspect persistence layer.", output: { path: "persistence.md" } },
+			],
+		}, h.signal, undefined, h.ctx);
+		assert.equal(mixed.isError, true);
+		assert.match(mixed.content[0].text, /different agents\[\]\.output values/);
+		assert.match(mixed.content[0].text, /split into separate agent_start calls/);
+		assert.equal(h.calls.length, 0);
+
+		const partial = await h.tools.get("agent_start").execute("run-output-partial", {
+			agents: [
+				{ role: "scout", task: "Inspect auth flow.", output: { disable: true } },
+				{ role: "scout", task: "Inspect persistence layer." },
+			],
+		}, h.signal, undefined, h.ctx);
+		assert.equal(partial.isError, true);
+		assert.match(partial.content[0].text, /only some agents/);
+		assert.equal(h.calls.length, 0);
+	});
+
 	it("agent_start resolves providerless and typoed runtime models before delegation", async () => {
 		const h = makeHarness();
 		await h.tools.get("agent_start").execute("run-model", {

@@ -59,7 +59,7 @@ const OutputPolicy = Type.Object({
 	path: Type.Optional(Type.String({ description: "Output file path relative to cwd or absolute." })),
 	mode: Type.Optional(OutputMode),
 	disable: Type.Optional(Type.Boolean({ description: "Disable file output." })),
-}, { additionalProperties: false });
+}, { additionalProperties: false, description: "Top-level output policy shared by all agents in this agent_start call." });
 
 const AgentStartSpec = Type.Object({
 	role: Type.String({ description: "Managed-agent role name returned by agent_roles." }),
@@ -68,6 +68,10 @@ const AgentStartSpec = Type.Object({
 	context: Type.Optional(ContextPolicy),
 	authority: Type.Optional(AuthorityPolicy),
 	runtime: Type.Optional(RuntimePolicy),
+	output: Type.Optional(Type.Unsafe({
+		...OutputPolicy,
+		description: "Compatibility shim only. Prefer top-level agent_start output; identical agents[].output values are promoted, mixed per-agent output is rejected.",
+	})),
 }, { additionalProperties: false });
 
 const AgentRolesParams = Type.Object({
@@ -242,6 +246,52 @@ function outputOverride(output: unknown): { output?: string | boolean; outputMod
 	};
 }
 
+function hasOwn(object: object, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function normalizedOutputPolicy(output: unknown): { path?: string; mode?: "inline" | "file-only"; disable?: true } {
+	if (!output || typeof output !== "object" || Array.isArray(output)) return {};
+	const policy = output as { path?: unknown; mode?: unknown; disable?: unknown };
+	return {
+		...(typeof policy.path === "string" ? { path: policy.path } : {}),
+		...(policy.mode === "inline" || policy.mode === "file-only" ? { mode: policy.mode } : {}),
+		...(policy.disable === true ? { disable: true } : {}),
+	};
+}
+
+function outputPolicyKey(output: unknown): string {
+	const policy = normalizedOutputPolicy(output);
+	return JSON.stringify({ path: policy.path, mode: policy.mode, disable: policy.disable });
+}
+
+function reconcileOutputPolicy(input: { agents: Array<Record<string, unknown>>; output?: unknown }): { output?: unknown; error?: string } {
+	const agentOutputs = input.agents
+		.map((spec, index) => ({ index, hasOutput: hasOwn(spec, "output"), output: spec.output }))
+		.filter((entry) => entry.hasOutput);
+	if (agentOutputs.length === 0) return { output: input.output };
+	if (agentOutputs.length !== input.agents.length) {
+		return {
+			error: "agent_start received agents[].output on only some agents. Per-agent output is not supported; move one shared policy to top-level output or split into separate agent_start calls.",
+		};
+	}
+	const first = agentOutputs[0]!;
+	const firstKey = outputPolicyKey(first.output);
+	const different = agentOutputs.find((entry) => outputPolicyKey(entry.output) !== firstKey);
+	if (different) {
+		return {
+			error: `agent_start received different agents[].output values at agents[${first.index}] and agents[${different.index}]. Per-agent output is not supported; use one top-level output shared by all agents, or split into separate agent_start calls.`,
+		};
+	}
+	if (input.output === undefined) return { output: first.output };
+	if (outputPolicyKey(input.output) !== firstKey) {
+		return {
+			error: "agent_start received both top-level output and agents[].output with different values. Keep only the top-level output, or split into separate agent_start calls for different output policies.",
+		};
+	}
+	return { output: input.output };
+}
+
 const SUPPORTED_AUTHORITY_FIELDS = new Set(["skill", "skills", "extensions", "extensionPolicy"]);
 
 function authorityObject(authority: unknown): Record<string, unknown> | undefined {
@@ -396,12 +446,14 @@ export function registerAgentRunTools(deps: AgentToolDeps): void {
 	deps.pi.registerTool(makeTool({
 		name: "agent_start",
 		label: "Agent Start",
-		description: "Start one or more managed child Pi agents. Default is foreground/blocking wait; prefer that when your next step depends on child output. Use placement:'background' or wait:'none' only when you can continue independent work or the user asks to detach; do not poll agent_status just to wait.",
+		description: "Start one or more managed child Pi agents. Default is foreground/blocking wait; prefer that when your next step depends on child output. output is top-level and shared by all agents; identical agents[].output is tolerated and promoted, but mixed per-agent output is rejected. Use placement:'background' or wait:'none' only when you can continue independent work or the user asks to detach; do not poll agent_status just to wait.",
 		parameters: AgentStartParams,
 		execute(id, params, signal, onUpdate, ctx) {
 			const input = params as { agents: Array<Record<string, unknown>>; placement?: "foreground" | "background"; wait?: "all" | "none"; concurrency?: number; isolation?: unknown; output?: unknown };
 			if (input.placement === "background" && input.wait === "all") return errorResult("agent_start placement='background' conflicts with wait='all'. Use placement='foreground' or wait='none'.");
 			if (input.placement === "foreground" && input.wait === "none") return errorResult("agent_start placement='foreground' conflicts with wait='none'. Use placement='background' or wait='all'.");
+			const effectiveOutput = reconcileOutputPolicy(input);
+			if (effectiveOutput.error) return errorResult(effectiveOutput.error);
 			for (const spec of input.agents) {
 				const unsupportedAuthority = unsupportedAuthorityFields(spec.authority);
 				if (unsupportedAuthority.length > 0) return errorResult(`agent_start authority contains unsupported field(s): ${unsupportedAuthority.join(", ")}. Configure tools/write/network limits on the agent role, or add adapter support first.`);
@@ -442,7 +494,7 @@ export function registerAgentRunTools(deps: AgentToolDeps): void {
 					acceptance: spec.acceptance as SubagentParamsLike["acceptance"],
 					model: modelResolutions.get(spec)?.ok ? modelResolutions.get(spec)!.resolved : undefined,
 					timeoutMinutes: timeoutMinutes(spec.runtime),
-					...outputOverride(input.output),
+					...outputOverride(effectiveOutput.output),
 					...(skillOverride(spec.authority) !== undefined ? { skill: skillOverride(spec.authority) } : {}),
 					...(extensionPolicy ? { extensionPolicy } : {}),
 				}, signal, onUpdate, ctx);
@@ -456,7 +508,7 @@ export function registerAgentRunTools(deps: AgentToolDeps): void {
 					acceptance: spec.acceptance as SubagentParamsLike["acceptance"],
 					model: modelResolutions.get(spec)?.ok ? modelResolutions.get(spec)!.resolved : undefined,
 					timeoutMinutes: timeoutMinutes(spec.runtime),
-					...outputOverride(input.output),
+					...outputOverride(effectiveOutput.output),
 					...(skillOverride(spec.authority) !== undefined ? { skill: skillOverride(spec.authority) } : {}),
 				})),
 			}, signal, onUpdate, ctx);

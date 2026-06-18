@@ -65,9 +65,12 @@ Parallel background scouts:
     { "role": "scout", "task": "Inspect auth flow." },
     { "role": "scout", "task": "Inspect persistence layer." }
   ],
-  "placement": "background"
+  "placement": "background",
+  "output": { "disable": true }
 }
 ```
+
+`output` is a top-level `agent_start` policy shared by every child in the call. Identical `agents[].output` values are accepted as a compatibility shim and promoted to the top level; different per-agent output policies are rejected. Role files may define default output paths such as `context.md`, but that role metadata is not the public `agent_start agents[]` shape.
 
 Follow up to a completed or live child:
 

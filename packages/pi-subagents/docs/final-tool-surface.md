@@ -72,6 +72,7 @@ Rules:
 
 - Default placement is foreground/blocking.
 - `placement: "background"` or `wait: "none"` starts a durable background run.
+- `output` is top-level and shared by all agents in the call. Identical `agents[].output` values are tolerated and promoted for compatibility; mixed per-agent output is rejected.
 - Unsupported runtime/context/isolation/authority fields fail before spawning.
 - Mixed `fresh`/`fork` context in one multi-agent run is rejected; start separate runs.
 - Per-call tool allowlists are not public; configure role tools instead.
