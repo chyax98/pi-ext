@@ -25,6 +25,8 @@ test("tool prompt guidelines include exposed and namespaced goal tool guidance",
   const combined = TOOL_PROMPT_GUIDELINES.join("\n");
   assert.match(combined, /get_goal \(or the exposed namespaced equivalent, such as pi__get_goal\)/);
   assert.match(combined, /create_goal \(or the exposed namespaced equivalent, such as pi__create_goal\)/);
+  assert.match(combined, /explicitly gives a budget\/limit in natural language/);
+  assert.match(combined, /激进 20m 完成这个任务/);
   assert.match(combined, /update_goal \(or the exposed namespaced equivalent, such as pi__update_goal\)/);
 });
 

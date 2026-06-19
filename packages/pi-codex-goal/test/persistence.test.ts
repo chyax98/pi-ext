@@ -263,7 +263,7 @@ test("compaction with unchanged budgetLimited goal appends no new entry", async 
   Date.now = () => now;
   try {
     const harness = createRuntimeHarness();
-    await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+    await harness.runTool("create_goal", { objective: "ship it", token_budget: 1 });
     const goalId = harness.snapshot().goal?.goalId;
     assert.ok(goalId);
 
@@ -271,13 +271,13 @@ test("compaction with unchanged budgetLimited goal appends no new entry", async 
     await harness.emit("turn_end", {
       type: "turn_end",
       turnIndex: 0,
-      message: assistantMessage("stop", { input: 8, output: 3 }),
+      message: assistantMessage("stop", { input: 800_000, output: 300_000 }),
       toolResults: [],
     });
 
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "budgetLimited");
-    assert.equal(goal?.usage.tokensUsed, 11);
+    assert.equal(goal?.usage.tokensUsed, 1_100_000);
     const activeSecondsAtBudgetLimit = goal?.usage.activeSeconds ?? 0;
     const entryCountAfterBudgetLimit = harness.entries.length;
     const setEntriesAfterBudgetLimit = countGoalSetEntries(harness.entries, goalId);
@@ -303,7 +303,7 @@ test("compaction with unchanged budgetLimited goal appends no new entry", async 
     assert.equal(harness.snapshot().goal?.status, "budgetLimited");
     assert.equal(countGoalSetEntries(harness.entries, goalId), setEntriesAfterBudgetLimit);
     assert.equal(countGoalUsageEntries(harness.entries, goalId), usageEntriesAfterBudgetLimit);
-    assert.equal(harness.snapshot().goal?.usage.tokensUsed, 11);
+    assert.equal(harness.snapshot().goal?.usage.tokensUsed, 1_100_000);
     assert.equal(harness.snapshot().goal?.usage.activeSeconds, activeSecondsAtBudgetLimit);
   } finally {
     Date.now = originalNow;
@@ -316,7 +316,7 @@ test("session_shutdown with unchanged budgetLimited goal appends no new entry", 
   Date.now = () => now;
   try {
     const harness = createRuntimeHarness();
-    await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+    await harness.runTool("create_goal", { objective: "ship it", token_budget: 1 });
     const goalId = harness.snapshot().goal?.goalId;
     assert.ok(goalId);
 
@@ -324,13 +324,13 @@ test("session_shutdown with unchanged budgetLimited goal appends no new entry", 
     await harness.emit("turn_end", {
       type: "turn_end",
       turnIndex: 0,
-      message: assistantMessage("stop", { input: 8, output: 3 }),
+      message: assistantMessage("stop", { input: 800_000, output: 300_000 }),
       toolResults: [],
     });
 
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "budgetLimited");
-    assert.equal(goal?.usage.tokensUsed, 11);
+    assert.equal(goal?.usage.tokensUsed, 1_100_000);
     const activeSecondsAtBudgetLimit = goal?.usage.activeSeconds ?? 0;
     const entryCountAfterBudgetLimit = harness.entries.length;
     const setEntriesAfterBudgetLimit = countGoalSetEntries(harness.entries, goalId);
@@ -346,7 +346,7 @@ test("session_shutdown with unchanged budgetLimited goal appends no new entry", 
     assert.equal(harness.snapshot().goal?.status, "budgetLimited");
     assert.equal(countGoalSetEntries(harness.entries, goalId), setEntriesAfterBudgetLimit);
     assert.equal(countGoalUsageEntries(harness.entries, goalId), usageEntriesAfterBudgetLimit);
-    assert.equal(harness.snapshot().goal?.usage.tokensUsed, 11);
+    assert.equal(harness.snapshot().goal?.usage.tokensUsed, 1_100_000);
     assert.equal(harness.snapshot().goal?.usage.activeSeconds, activeSecondsAtBudgetLimit);
   } finally {
     Date.now = originalNow;
@@ -396,6 +396,23 @@ test("create_goal can explicitly replace a non-complete goal", async () => {
   assert.notEqual(harness.snapshot().goal?.goalId, originalGoalId);
 });
 
+test("create_goal treats token_budget as millions", async () => {
+  const harness = createRuntimeHarness();
+
+  await harness.runTool("create_goal", { objective: "ship it", token_budget: 2 });
+  assert.equal(harness.snapshot().goal?.tokenBudget, 2_000_000);
+
+  await harness.runTool("create_goal", { objective: "next", token_budget: "2m", replace_existing: true });
+  assert.equal(harness.snapshot().goal?.tokenBudget, 2_000_000);
+
+  await harness.runTool("create_goal", { objective: "bare", token_budget: "3", replace_existing: true });
+  assert.equal(harness.snapshot().goal?.tokenBudget, 3_000_000);
+
+  await assert.rejects(
+    () => harness.runTool("create_goal", { objective: "too small", token_budget: "500k", replace_existing: true }),
+    /millions/,
+  );
+});
 test("failed create_goal throws so pi marks the tool result as an error", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
